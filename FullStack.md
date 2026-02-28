@@ -32,23 +32,23 @@ Create a concise architecture proposal for an MVP.
 
 You need to put your solution here.
 
-# ✅ **User Flow (Line by Line, Very Simple)**
+# ✅ User Flow (Line by Line, Very Simple)
 
-1. User places all videos inside the folder: **`input/videos/`**.
-2. User runs the batch command: **`node processFolder.js`**.
+1. User places all videos inside the folder: `input/videos/`.
+2. User runs the batch command: `node processFolder.js`.
 3. System scans the folder and finds all video files.
-4. For each video, the system **creates a processing job**.
-5. Jobs are added to the **job queue (BullMQ)**.
+4. For each video, the system creates a processing job.
+5. Jobs are added to the job queue (BullMQ).
 6. Background worker picks the first job from the queue.
 7. Worker loads the video and extracts metadata (duration, size).
 8. Worker runs **Whisper** to generate the transcript.
-9. Worker sends transcript to **LLM** to generate summary + highlights.
-10. Worker uses **FFmpeg** to extract clips for each highlight.
-11. Worker uses **FFmpeg** to take screenshots at highlight timestamps.
-12. Worker builds **Summary.md** with all content + asset links.
-13. Worker writes final output to **`output/<video_name>/`**.
-14. Job is marked **complete** in the system.
-15. User goes to the **output folder**, opens **Summary.md**, and views everything.
+9. Worker sends transcript to LLM to generate summary + highlights.
+10. Worker uses FFmpeg to extract clips for each highlight.
+11. Worker uses FFmpeg to take screenshots at highlight timestamps.
+12. Worker builds Summary.md with all content + asset links.
+13. Worker writes final output to `output/<video_name>/`.
+14. Job is marked complete in the system.
+15. User goes to the output folder, opens Summary.md, and views everything.
 ---
 
 High level Design
@@ -331,6 +331,151 @@ Provide:
 
 You need to put your solution here.
 
+1️⃣ Minimal User Flow (5 Steps)
+
+Connect LinkedIn
+User logs in → platform stores OAuth token.
+
+Define Persona & Tone
+User selects writing style (Professional, Humorous, Founder-style, etc.)
+
+Provide Topics/Ideas
+User enters themes like “AI”, “Career Tips”, “Remote Work”.
+
+Generate 3 Draft Posts
+Backend → LLM generates 3 high-quality LinkedIn post drafts using persona + topics.
+
+Approve → Schedule → Auto-Post
+User picks one draft → selects date/time → system posts automatically using LinkedIn API.
+
+
+2. High-Level Architecture (MERN + Worker + LLM + LinkedIn API)
+
+┌──────────────────────────┐
+│        React UI           │
+│ (Connect → Persona → Drafts) │
+└─────────────┬────────────┘
+              │  HTTP
+              ▼
+     ┌────────────────────┐
+     │     Express API     │
+     │ - LinkedIn OAuth    │
+     │ - Draft Generation  │
+     │ - Approval Flow     │
+     │ - Scheduling APIs   │
+     └───────────┬────────┘
+                 │
+                 ▼
+        ┌──────────────────────┐
+        │       MongoDB         │
+        │ Users, Personas,      │
+        │ Drafts, Schedules,    │
+        │ PostLogs              │
+        └───────────┬──────────┘
+                    │
+                    ▼
+    ┌────────────────────────────────┐
+    │     LLM Service (OpenAI/Groq)  │
+    │ - Post generation              │
+    │ - Tone + persona enforcement   │
+    └───────────────┬────────────────┘
+                    │
+                    ▼
+       ┌──────────────────────────┐
+       │  Background Scheduler     │
+       │   (Node + BullMQ/Cron)   │
+       │ - Polls due posts        │
+       │ - Publishes via LinkedIn │
+       └──────────────┬──────────┘
+                      │
+                      ▼
+           ┌────────────────────┐
+           │   LinkedIn API     │
+           │  (Post Publishing) │
+           └────────────────────┘
+           
+ 3. Where to Store Prompts (Provided by GenAI Team)
+ 
+ | Field     | Type     | Description                           |
+| --------- | -------- | ------------------------------------- |
+| _id       | ObjectId | Identifier                            |
+| name      | String   | e.g., "founder_post", "career_advice" |
+| template  | String   | Full prompt text with variables       |
+| version   | Number   | Version control                       |
+| createdAt | Date     | Timestamp                             |
+
+
+4. Data Model
+User
+| Field               | Type     | Description |
+| ------------------- | -------- | ----------- |
+| _id                 | ObjectId | User ID     |
+| name                | String   | User's name |
+| email               | String   | Email       |
+| linkedinAccessToken | String   | OAuth token |
+| createdAt           | Date     | Timestamp   |
+
+Persona
+| Field          | Type     | Description                                    |
+| -------------- | -------- | ---------------------------------------------- |
+| _id            | ObjectId | Persona ID                                     |
+| userId         | ObjectId | Linked to User                                 |
+| tone           | String   | e.g., “professional”, “funny”, “founder-style” |
+| writingStyle   | String   | Style description                              |
+| targetAudience | String   | e.g., students, founders                       |
+| createdAt      | Date     | Timestamp                                      |
+
+
+Draft
+| Field         | Type     | Description          |
+| ------------- | -------- | -------------------- |
+| _id           | ObjectId | Draft ID             |
+| userId        | ObjectId | Owner                |
+| personaId     | ObjectId | Used persona         |
+| topic         | String   | Topic given by user  |
+| draft1        | String   | Post draft 1         |
+| draft2        | String   | Post draft 2         |
+| draft3        | String   | Post draft 3         |
+| approvedDraft | String   | Final selected draft |
+| status        | String   | generated / approved |
+| createdAt     | Date     | Timestamp            |
+
+Schedule
+| Field       | Type     | Description               |
+| ----------- | -------- | ------------------------- |
+| _id         | ObjectId | Schedule ID               |
+| userId      | ObjectId | Linked to User            |
+| draftId     | ObjectId | Approved draft            |
+| scheduledAt | Date     | When to publish           |
+| status      | String   | pending / posted / failed |
+
+5.PostLog
+| Field        | Type     | Description         |
+| ------------ | -------- | ------------------- |
+| _id          | ObjectId | Identifier          |
+| userId       | ObjectId | User                |
+| draftId      | ObjectId | Posted content      |
+| postedAt     | Date     | Actual posting time |
+| responseId   | String   | LinkedIn post ID    |
+| status       | String   | success / error     |
+| errorMessage | String   | If failed           |
+
+5. Api endpoints
+| Method   | Endpoint                | Description                  |
+| -------- | ----------------------- | ---------------------------- |
+| **GET**  | /api/auth/linkedin      | Redirect to LinkedIn OAuth   |
+| **GET**  | /api/auth/callback      | Store access token           |
+| **POST** | /api/persona            | Create/Update persona        |
+| **GET**  | /api/persona            | Fetch persona                |
+| **POST** | /api/drafts/generate    | Generate 3 drafts using LLM  |
+| **GET**  | /api/drafts/:id         | Get drafts                   |
+| **POST** | /api/drafts/:id/approve | Approve a draft              |
+| **POST** | /api/schedule           | Schedule a post              |
+| **GET**  | /api/schedule           | List scheduled posts         |
+| **POST** | /api/post/run           | Force manual posting         |
+| **POST** | /api/post/webhook       | Scheduler posts via LinkedIn |
+| **GET**  | /api/logs               | Post logs                    |
+
 ---
 
 ## **Problem 3:** **DOCX Template → Bulk DOCX/PDF Generator Architecture**
@@ -355,6 +500,171 @@ Provide MVP architecture + LLM prompt spec for:
 
 You need to put your solution here.
 
+1. User Flow (Step-by-step)
+1. Upload Template
+
+User selects a .docx file
+
+System extracts placeholders → shows detected fields
+
+2. Field Review
+
+User sees:
+
+field name
+
+field type (text/date/number/options)
+
+required?
+
+validation rules
+
+User edits/approves schema
+
+3. Single Generate
+
+User inputs values
+
+System generates DOCX + PDF
+
+Downloads instantly
+
+4. Bulk Generate
+
+User uploads CSV/Google Sheet
+
+System validates rows
+
+Creates bulk job
+
+Worker processes rows one by one
+
+Produces:
+
+ZIP of all generated docs
+
+Bulk report: success/fail reason
+
+User downloads ZIP + report
+
+2. High Level Design
+   
+ ┌────────────────────────┐
+ │      React Frontend     │
+ │ Upload → Review → Run   │
+ └─────────────┬──────────┘
+               │ REST API
+               ▼
+ ┌────────────────────────────────────┐
+ │            Express API             │
+ │ - Upload template                  │
+ │ - Extract fields                   │
+ │ - Validate CSV                     │
+ │ - Create single/bulk jobs          │
+ │ - Fetch results                    │
+ └─────────────┬──────────────────────┘
+               │
+               ▼
+ ┌────────────────────────────────────┐
+ │             MongoDB                │
+ │ Templates, Fields, BulkRuns,       │
+ │ RowResult, Artifacts               │
+ └─────────────┬──────────────────────┘
+               │
+               ▼
+ ┌────────────────────────────────────┐
+ │ Background Worker (BullMQ + Node)  │
+ │ - Parse template                   │
+ │ - Render DOCX                      │
+ │ - Convert to PDF                   │
+ │ - Validate CSV rows                │
+ │ - Generate ZIP                     │
+ │ - Save artifacts                   │
+ └─────────────┬──────────────────────┘
+               │
+               ▼
+ ┌────────────────────────────────────┐
+ │       Local Storage (/data)        │
+ │ template.docx                      │
+ │ generated/<jobId>/<files>          │
+ │ zip bundles, PDFs                  │
+ └────────────────────────────────────┘
+
+3.
+QUEUED → VALIDATING_ROWS → PROCESSING_ROWS → GENERATING_ZIP → SUCCESS
+     OR
+                                     └──► FAILED (reason)
+
+4.   Data Model (Database Schema)
+   Template
+{
+  _id,
+  name,
+  filePath,
+  uploadedBy,
+  createdAt
+}
+
+TemplateField
+{
+  _id,
+  templateId,
+  fieldName,              // {{name}}
+  type,                   // text, number, date, enum
+  required,               // boolean
+  validation,             // regex, min/max
+  options                 // for enum
+}
+
+BulkRun
+{
+  _id,
+  templateId,
+  status,                 // queued, running, success, failed
+  totalRows,
+  successCount,
+  failedCount,
+  zipFilePath,
+  reportFilePath,
+  createdAt
+}
+
+{
+  _id,
+  bulkRunId,
+  rowNumber,
+  status,                 // success / failed
+  reason,                 // null or error
+  outputDocPath,
+  outputPdfPath
+}
+
+5. API Endpoints (10 endpoints)
+Template + Fields
+
+POST /template/upload — upload .docx
+
+GET /template/:id/fields — get detected fields
+
+PUT /template/:id/fields — update field schema
+
+Single Generate
+
+POST /generate/single/:templateId — returns docx/pdf
+
+GET /artifact/:id — download file
+
+Bulk Generate
+
+POST /generate/bulk/:templateId — upload CSV → create job
+
+GET /bulk/:id/status — job progress
+
+GET /bulk/:id/zip — download ZIP
+
+GET /bulk/:id/report — download report
+
+DELETE /bulk/:id — cleanup
 ---
 
 ## **Problem 4:** **Character-Based Video Series Generator (Architecture Proposal)**
@@ -374,4 +684,207 @@ Create a small architecture proposal for MVP.
 
 **Your Solution for problem 4:**
 
+1. Data Model
+Character
+{
+  _id,
+  name,
+  description,            // personality, traits
+  imageRef,               // uploaded image or generated base look
+  voiceStyle,             // voice tone, accent (optional)
+  styleGuide,             // clothing, color palette
+  createdAt
+}
+Relationship
+{
+  _id,
+  characterA,             // reference to Character
+  characterB,             // reference to Character
+  relationshipType,       // friends, rivals, mentor, etc.
+  notes
+}
+Episode
+{
+  _id,
+  title,
+  storyPrompt,            // user provided short story
+  characters,             // selected characters for this episode
+  overallSummary,
+  status,                 // draft, processing, complete
+  createdAt
+}
+Scene
+{
+  _id,
+  episodeId,
+  sceneNumber,
+  description,
+  dialogues,              // ordered per character
+  assetPlanIds,           // list of Asset documents
+  voicePlan,              // lines + voice metadata
+}
+Asset
+{
+  _id,
+  episodeId,
+  sceneId,
+  type,                   // image / prop / background / motion element
+  prompt,                 // generation prompt
+  generatedRef,           // link to generated asset
+}
+
+2. Pipeline Flow
+Step 1 — Story → Episode Setup
+
+User inputs a short story/situation
+
+System:
+
+understands the plot
+
+identifies the characters involved
+
+ensures tone/style matches character definitions
+
+Step 2 — Scene Breakdown
+
+LLM converts story into a structured sequence:
+
+Scene 1: Setup
+Scene 2: Conflict
+Scene 3: Resolution
+
+Each scene contains:
+
+setting
+
+motivation & intention
+
+emotional beats
+
+camera style (optional)
+
+Step 3 — Dialogues Generation
+
+For each scene:
+
+LLM generates character-specific dialogues
+
+Keeps tone, personality, relationships consistent
+
+Builds a voiceover plan:
+
+character: A
+line: "Let's move quickly."
+emotion: urgent
+voiceStyle: deep calm tone
+Step 4 — Asset Plan Generation
+
+For each scene:
+
+background description
+
+props required
+
+character poses
+
+camera framing
+
+transitions
+
+The system reuses existing character base images to keep consistency
+
+Output example:
+
+Scene 2 Assets:
+- Background: "dark alley futuristic"
+- Pose: "Character A - angry expression"
+- Prop: "digital tablet glowing"
+Step 5 — Render Plan
+
+Defines the final output:
+
+Which frames to generate
+
+Which images can be reused
+
+Where to animate or pan
+
+Voiceover timing
+
+(For V1) Export as slideshow video with transitions
+
+(Future) Lip-sync + animation
+
+3. Consistency Strategy
+A. Character Memory
+
+Store:
+
+personality traits
+
+speaking style examples
+
+does/does-not behaviors
+
+visual style rules
+LLM sees a “Character Bible” for every episode.
+
+B. Style Guide
+
+fixed color palette
+
+clothing style
+
+silhouette
+
+face identity embedding (for image model)
+Ensures visual consistency across all episodes.
+
+C. Asset Reuse
+
+Assets generated in Episode 1 can be:
+
+reused in Episode 2
+
+reposed
+
+recolored
+
+background extended
+This drastically reduces cost and ensures consistency.
+
+D. Relationship Memory
+
+Used to shape dialogues:
+
+If A is mentor of B → A’s tone = guiding, B’s tone = learning
+If rivals → sarcastic or competitive tone
+
+4. MVP Scope vs V1 Scope
+MVP (What we ship first)
+
+Focus on script + static assets + voice plan.
+
+✔ Character creation (name + image + personality)
+✔ Relationship definitions
+✔ Input story → scene breakdown
+✔ Dialogues generation
+✔ Asset prompts (NOT actual video rendering)
+✔ Basic voiceover plan
+✔ JSON + Markdown episode package
+✔ Light-weight image generation (one image per scene)
+
+Output:
+A structured episode package folder:
+
+
+episode-01/
+  script.md
+  scenes.json
+  assets/
+    scene1.png
+    scene2.png
+  voice_plan.json
+  
 You need to put your solution here.
